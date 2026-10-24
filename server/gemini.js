@@ -45,7 +45,37 @@ function extractJson(text) {
   return JSON.parse(raw.slice(start, end + 1));
 }
 
-export async function generateGroundedAnswer({ query, evidence, history }) {
+export async function expandSearchQuery(query) {
+  const prompt = `List technical search keywords for this question. Include the original words and English equivalents of any Russian or Kazakh terms. One line only, no sentences.\n${query}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey()
+        },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0, maxOutputTokens: 120 }
+        }),
+        signal: controller.signal
+      }
+    );
+    const payload = await response.json();
+    if (!response.ok) return '';
+    return payload.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join(' ') || '';
+  } catch {
+    return '';
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function generateGroundedAnswer({ query, evidence, history, languageName = 'English' }) {
   const evidenceBlocks = evidence.map((item, index) => (
     `[${index}] document=${item.chunk.filename} docId=${item.chunk.docId} page=${item.chunk.page} section=${item.chunk.section} clauseKey=${item.chunk.clauseKey}\n${item.chunk.text.slice(0, 1400)}`
   )).join('\n\n');
@@ -62,6 +92,9 @@ Do not invent numbers, page numbers, limits, tags, or document names.
 Each finding must set evidenceIndex to the integer of the block it uses. Use evidenceIndex2 only when a second block is required.
 If two blocks state different values for the same parameter, set conflict to true and cite both.
 Numbers you write must appear in the cited evidence.
+Write summary, labels, finding text, textCont, and recommendation in ${languageName}.
+Do not translate document names, tags, units, or numbers.
+If you quote a source sentence, keep that quote in its original language.
 
 QUESTION:
 ${query}

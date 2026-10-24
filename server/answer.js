@@ -1,6 +1,7 @@
 import { allChunks, clauseFromChunk, markConflictDocs } from './corpus.js';
 import { detectConflicts } from './conflicts.js';
-import { generateGroundedAnswer, hasGeminiKey } from './gemini.js';
+import { expandSearchQuery, generateGroundedAnswer, hasGeminiKey } from './gemini.js';
+import { copyFor } from './i18n.js';
 import { retrievalQuery, searchChunks } from './retrieve.js';
 
 function numbersIn(text) {
@@ -12,19 +13,20 @@ function numbersAreGrounded(text, sources) {
   return numbersIn(text).every((value) => allowed.has(value));
 }
 
-function abstain(query, reason) {
+function abstain(query, reason, language = 'en') {
+  const copy = copyFor(language);
   return {
     message: {
       role: 'assistant',
       latency: '0ms',
-      status: 'NOT FOUND IN CORPUS',
+      status: copy.notFound,
       statusType: 'warning',
-      summary: reason || `No indexed passage in the selected documents answers: "${query}".`,
+      summary: reason || copy.notFoundSummary(query),
       findings: [],
-      recommendation: 'ABSTAINED: SynAI will not infer a technical limit that is not present in the selected documents. Upload the governing manual or widen the corpus scope.'
+      recommendation: copy.abstain
     },
     clauses: [],
-    conflicts: detectConflicts(allChunks()),
+    conflicts: detectConflicts(allChunks(), language),
     traces: []
   };
 }
@@ -46,20 +48,25 @@ function mergeClause(list, chunk) {
   });
 }
 
-export async function answerQuestion({ query, documentIds, history }) {
+export async function answerQuestion({ query, documentIds, history, language = 'en' }) {
   const started = Date.now();
+  const copy = copyFor(language);
   const scoped = allChunks(documentIds);
   if (!scoped.length) {
-    return abstain(query, 'No documents are in scope. Include at least one indexed document before executing a query.');
+    return abstain(query, copy.noDocs, language);
   }
 
-  const expanded = retrievalQuery(query, history);
+  let expanded = retrievalQuery(query, history);
+  if (/[\u0400-\u04FF]/.test(expanded)) {
+    const extra = await expandSearchQuery(expanded);
+    if (extra) expanded = `${expanded} ${extra}`;
+  }
   const hits = searchChunks(expanded, scoped, 8);
   if (!hits.length) {
-    return abstain(query, `The selected documents do not contain indexed text matching "${query}".`);
+    return abstain(query, copy.noMatch(query), language);
   }
 
-  const conflicts = detectConflicts(scoped);
+  const conflicts = detectConflicts(scoped, language);
   if (conflicts.length) {
     markConflictDocs(conflicts.flatMap((item) => [item.leftDocId, item.rightDocId]));
   }
@@ -68,7 +75,7 @@ export async function answerQuestion({ query, documentIds, history }) {
   let modelError = null;
   if (hasGeminiKey()) {
     try {
-      const generated = await generateGroundedAnswer({ query, evidence: hits, history });
+      const generated = await generateGroundedAnswer({ query, evidence: hits, history, languageName: copy.name });
       modelAnswer = generated.answer;
     } catch (error) {
       modelError = error.message;
@@ -82,7 +89,7 @@ export async function answerQuestion({ query, documentIds, history }) {
   const findings = [];
 
   if (modelAnswer && modelAnswer.found === false) {
-    const result = abstain(query, modelAnswer.summary || undefined);
+    const result = abstain(query, modelAnswer.summary || undefined, language);
     result.message.latency = `${Date.now() - started}ms`;
     result.conflicts = conflicts;
     return result;
@@ -124,14 +131,14 @@ export async function answerQuestion({ query, documentIds, history }) {
         label: modelError
           ? `${String(index + 1).padStart(2, '0')} / EXTRACTED EVIDENCE (MODEL UNAVAILABLE)`
           : `${String(index + 1).padStart(2, '0')} / RETRIEVED PASSAGE`,
-        text: `Retrieved from ${hit.chunk.filename}, page ${hit.chunk.page}. No generated number was added:`,
+        text: `${copy.retrievedLead} ${hit.chunk.filename}, ${copy.page} ${hit.chunk.page}. ${copy.noAdded}`,
         citation1: citation(hit.chunk),
         textCont: hit.chunk.excerpt.slice(0, 420),
         citation2: null
       });
       traces.push({
         id: `CLM-${String(index + 1).padStart(2, '0')}`,
-        claim: `Passage retrieved for "${query}"`,
+        claim: `${copy.passage} "${query}"`,
         sourceDoc: hit.chunk.filename,
         location: `Page ${hit.chunk.page} · ${hit.chunk.section}`,
         bbox: hit.chunk.bbox,
@@ -145,20 +152,20 @@ export async function answerQuestion({ query, documentIds, history }) {
   const recommendation = modelAnswer?.recommendation && numbersAreGrounded(modelAnswer.recommendation, hits.map((hit) => hit.chunk.text))
     ? modelAnswer.recommendation
     : conflict
-      ? 'ACTION REQUIRED: Conflicting values were found across the selected documents. Open each citation and reconcile the governing setpoint before use.'
+      ? copy.action
       : modelError
-        ? `MODEL NOTE: ${modelError}. Showing retrieved excerpts only.`
-        : 'VERIFICATION TRACE: Open the citation badges to inspect the verbatim page excerpt. No value was added beyond those excerpts.';
+        ? copy.modelNote(modelError)
+        : copy.trace;
 
   return {
     message: {
       role: 'assistant',
       latency: `${Date.now() - started}ms`,
-      status: conflict ? 'PARAMETER CONFLICT DETECTED' : modelError ? 'EXTRACTIVE EVIDENCE ONLY' : 'EVIDENCE BOUND',
+      status: conflict ? copy.conflict : modelError ? copy.extractive : copy.evidence,
       statusType: conflict || modelError ? 'warning' : 'verified',
       summary: modelAnswer?.summary && numbersAreGrounded(modelAnswer.summary, hits.map((hit) => hit.chunk.text))
         ? modelAnswer.summary
-        : `Retrieved ${findings.length} passage(s) from the selected documents for "${query}".`,
+        : copy.retrieved(findings.length, query),
       findings,
       recommendation
     },

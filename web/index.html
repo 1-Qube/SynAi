@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SYNAI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        paper: '#F2F0E8',
+                        ink: '#0E0E0E',
+                        charcoal: '#3D3C38',
+                        muted: '#6E6C64',
+                        acid: '#CEFF1A'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                        display: ['Anton', 'Impact', 'sans-serif']
+                    }
+                }
+            }
+        };
+    </script>
+    <style>
+        * { box-sizing: border-box; border-radius: 0 !important; }
+        body { background: #F2F0E8; color: #0E0E0E; font-family: Inter, sans-serif; }
+        .b-box { border: 1px solid #0E0E0E; }
+        .b-line-b { border-bottom: 1px solid #0E0E0E; }
+        .b-line-t { border-top: 1px solid #0E0E0E; }
+        .b-line-l { border-left: 1px solid #0E0E0E; }
+        .btn-brutal { background: #0E0E0E; color: #F2F0E8; border: 1px solid #0E0E0E; }
+        .btn-brutal:hover { background: #CEFF1A; color: #0E0E0E; }
+        .monument { font-family: Anton, Impact, sans-serif; letter-spacing: -0.015em; line-height: 0.86; text-transform: uppercase; }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div class="max-w-[1380px] mx-auto px-5 sm:px-10 lg:px-14">
+        <header class="pt-7 pb-5 b-line-b flex items-center justify-between gap-4">
+            <span class="text-[26px] font-black tracking-[-0.05em]">SYNAI</span>
+            <div class="flex items-center gap-5">
+                <div class="flex items-center b-box text-[11px] font-mono font-semibold">
+                    <button type="button" data-lang="en" class="lang px-2.5 py-1">EN</button>
+                    <button type="button" data-lang="ru" class="lang px-2.5 py-1 b-line-l">RU</button>
+                    <button type="button" data-lang="kz" class="lang px-2.5 py-1 b-line-l">KZ</button>
+                </div>
+                <a href="/chat.html" class="btn-brutal px-4 py-2 text-[14px] font-medium inline-flex items-center gap-2">
+                    <span id="try-label">Try</span>
+                    <span class="font-mono text-xs">↗</span>
+                </a>
+            </div>
+        </header>
+
+        <section class="py-16 sm:py-24 b-line-b grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+            <div class="lg:col-span-6">
+                <div id="eyebrow" class="font-mono text-[11px] tracking-[0.2em] uppercase text-charcoal mb-6"></div>
+                <h1 id="headline" class="text-[44px] sm:text-[62px] font-extrabold tracking-[-0.045em] leading-[0.98] mb-8"></h1>
+                <p id="subcopy" class="text-[17px] text-charcoal leading-[1.52] max-w-[520px] mb-10"></p>
+                <a href="/chat.html" class="btn-brutal px-6 py-3.5 text-[14px] font-medium inline-flex items-center gap-2">
+                    <span id="try-main"></span>
+                    <span class="font-mono text-xs">↗</span>
+                </a>
+            </div>
+            <div class="lg:col-span-6 select-none">
+                <div class="grid grid-cols-12 items-end">
+                    <div id="word1" class="col-span-7 monument text-[96px] sm:text-[140px]"></div>
+                    <div id="label1" class="col-span-5 pl-5 pb-8 b-line-l font-mono text-[10px] tracking-[0.14em] uppercase text-charcoal leading-[1.45]"></div>
+                </div>
+                <div class="relative h-px bg-ink">
+                    <div class="w-[18px] h-[18px] bg-acid border border-ink absolute left-[58%] -translate-x-1/2 -translate-y-1/2"></div>
+                </div>
+                <div class="grid grid-cols-12">
+                    <div class="col-span-7"></div>
+                    <div class="col-span-5 pl-4 pt-3 b-line-l">
+                        <div id="word2" class="monument text-[88px] sm:text-[124px]"></div>
+                        <div id="label2" class="mt-4 pl-12 font-mono text-[10px] tracking-[0.14em] uppercase text-charcoal leading-[1.45]"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="py-12 grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-0">
+            <div class="md:pr-10">
+                <div class="font-mono text-[12px] font-semibold mb-3">01</div>
+                <h2 id="s1t" class="text-[24px] font-bold tracking-[-0.03em] mb-3"></h2>
+                <p id="s1d" class="text-[14.5px] text-charcoal leading-[1.55]"></p>
+            </div>
+            <div class="md:px-10 md:b-line-l">
+                <div class="font-mono text-[12px] font-semibold mb-3">02</div>
+                <h2 id="s2t" class="text-[24px] font-bold tracking-[-0.03em] mb-3"></h2>
+                <p id="s2d" class="text-[14.5px] text-charcoal leading-[1.55]"></p>
+            </div>
+            <div class="md:pl-10 md:b-line-l">
+                <div class="font-mono text-[12px] font-semibold mb-3">03</div>
+                <h2 id="s3t" class="text-[24px] font-bold tracking-[-0.03em] mb-3"></h2>
+                <p id="s3d" class="text-[14.5px] text-charcoal leading-[1.55]"></p>
+            </div>
+        </section>
+
+        <footer class="py-7 b-line-t flex items-center justify-between font-mono text-[11px] text-charcoal">
+            <span class="text-[18px] font-black tracking-[-0.05em] text-ink font-sans">SYNAI</span>
+            <a href="/chat.html" class="hover:text-ink underline" id="footer-try"></a>
+        </footer>
+    </div>
+
+    <script>
+        const copy = {
+            en: {
+                try: 'Try',
+                eyebrow: 'INDUSTRIAL SAFETY STARTS WITH VERIFICATION',
+                headline: 'Technical manuals don’t need guesses. They need proof.',
+                subcopy: 'Upload a manual, ask a question, and get an answer tied to the page it came from. If the document does not say it, SYNAI says so.',
+                word1: 'CITE',
+                label1: 'THE RETRIEVER<br>LOCKS EXACT PAGES',
+                word2: 'CLASH',
+                label2: 'THE AUDITOR<br>FLAGS CONFLICTS',
+                s1t: 'Upload the document',
+                s1d: 'Drop a PDF, DOCX, or text file. SYNAI indexes the pages and keeps the original wording.',
+                s2t: 'Ask in your language',
+                s2d: 'Ask in English, Russian, or Kazakh. The reply stays tied to the uploaded text.',
+                s3t: 'Open the citation',
+                s3d: 'Every claim can be opened back to the page excerpt. Missing answers are refused, not invented.'
+            },
+            ru: {
+                try: 'Попробовать',
+                eyebrow: 'ПРОВЕРКА НАЧИНАЕТСЯ С ДОКУМЕНТА',
+                headline: 'Техдокументам не нужны догадки. Им нужны страницы.',
+                subcopy: 'Загрузите руководство, задайте вопрос и получите ответ со ссылкой на страницу. Если в документе этого нет, SYNAI так и скажет.',
+                word1: 'ФАКТ',
+                label1: 'ПОИСК<br>ТОЧНЫЕ СТРАНИЦЫ',
+                word2: 'СПОР',
+                label2: 'АУДИТ<br>НАХОДИТ РАСХОЖДЕНИЯ',
+                s1t: 'Загрузите документ',
+                s1d: 'PDF, DOCX или текст. SYNAI индексирует страницы и сохраняет исходные формулировки.',
+                s2t: 'Спросите на своём языке',
+                s2d: 'На английском, русском или казахском. Ответ остаётся привязан к загруженному тексту.',
+                s3t: 'Откройте цитату',
+                s3d: 'Каждое утверждение можно открыть до фрагмента страницы. Чего нет в тексте, система не выдумывает.'
+            },
+            kz: {
+                try: 'Көру',
+                eyebrow: 'ТЕКСЕРУ ҚҰЖАТТАН БАСТАЛАДЫ',
+                headline: 'Техникалық құжатқа болжам емес, нақты бет керек.',
+                subcopy: 'Нұсқаулықты жүктеп, сұрақ қойыңыз. Жауап бетке байланады. Құжатта жоқ нәрсені SYNAI ойдан шығармайды.',
+                word1: 'ДӘЛЕЛ',
+                label1: 'ІЗДЕУ<br>НАҚТЫ БЕТТЕР',
+                word2: 'ҚАЙШЫ',
+                label2: 'АУДИТ<br>АЙЫРМАШЫЛЫҚТЫ ТАБАДЫ',
+                s1t: 'Құжатты жүктеңіз',
+                s1d: 'PDF, DOCX немесе мәтін. SYNAI беттерді индекстеп, бастапқы сөзді сақтайды.',
+                s2t: 'Өз тіліңізде сұраңыз',
+                s2d: 'Ағылшын, орыс немесе қазақ тілінде. Жауап жүктелген мәтінге байланады.',
+                s3t: 'Дәйексөзді ашыңыз',
+                s3d: 'Әр тұжырымды бет үзіндісіне дейін ашуға болады. Мәтінде жоқ жауап берілмейді.'
+            }
+        };
+
+        let lang = localStorage.getItem('synai-lang') || 'en';
+        if (!copy[lang]) lang = 'en';
+
+        function paint() {
+            const text = copy[lang];
+            document.getElementById('eyebrow').textContent = text.eyebrow;
+            document.getElementById('headline').textContent = text.headline;
+            document.getElementById('subcopy').textContent = text.subcopy;
+            document.getElementById('word1').textContent = text.word1;
+            document.getElementById('label1').innerHTML = text.label1;
+            document.getElementById('word2').textContent = text.word2;
+            document.getElementById('label2').innerHTML = text.label2;
+            document.getElementById('s1t').textContent = text.s1t;
+            document.getElementById('s1d').textContent = text.s1d;
+            document.getElementById('s2t').textContent = text.s2t;
+            document.getElementById('s2d').textContent = text.s2d;
+            document.getElementById('s3t').textContent = text.s3t;
+            document.getElementById('s3d').textContent = text.s3d;
+            document.getElementById('try-label').textContent = text.try;
+            document.getElementById('try-main').textContent = text.try;
+            document.getElementById('footer-try').textContent = text.try + ' ↗';
+            document.querySelectorAll('.lang').forEach((button) => {
+                const on = button.dataset.lang === lang;
+                button.className = `lang px-2.5 py-1 ${button.dataset.lang === 'en' ? '' : 'b-line-l'} ${on ? 'bg-ink text-paper' : ''}`;
+            });
+            localStorage.setItem('synai-lang', lang);
+        }
+
+        document.querySelectorAll('.lang').forEach((button) => {
+            button.onclick = () => {
+                lang = button.dataset.lang;
+                paint();
+            };
+        });
+        paint();
+    </script>
+</body>
+</html>

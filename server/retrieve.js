@@ -1,10 +1,10 @@
-const STOP = new Set(['the', 'and', 'for', 'with', 'from', 'that', 'this', 'are', 'was', 'were', 'what', 'when', 'where', 'which', 'into', 'about', 'against', 'check', 'please']);
+const STOP = new Set(['the', 'and', 'for', 'with', 'from', 'that', 'this', 'are', 'was', 'were', 'what', 'when', 'where', 'which', 'into', 'about', 'against', 'check', 'please', 'что', 'как', 'для', 'это', 'или', 'при', 'нет', 'және', 'ғана', 'бар']);
 
 export function tokenize(value) {
   return String(value || '')
     .toLowerCase()
     .replace(/n·m/g, 'nm')
-    .replace(/[^a-z0-9.°+%]+/g, ' ')
+    .replace(/[^a-z0-9\u0400-\u04ff.°+%]+/gi, ' ')
     .split(/\s+/)
     .filter((token) => token.length > 1 && !STOP.has(token));
 }

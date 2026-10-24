@@ -1,3 +1,4 @@
+import { copyFor } from './i18n.js';
 import { tokenize } from './retrieve.js';
 
 const UNIT_RE = /(?<![\w.])(\d+(?:\.\d+)?)\s*(°C|°F|\bC\b|\bF\b|bar\(a\)|bar|psi|N·m|Nm|mm|Ω|ohms?|ms|%)/gi;
@@ -65,7 +66,8 @@ function jaccard(a, b) {
   return union ? intersection / union : 0;
 }
 
-export function detectConflicts(chunks) {
+export function detectConflicts(chunks, language = 'en') {
+  const copy = copyFor(language);
   const measurements = extractMeasurements(chunks);
   const conflicts = [];
   const used = new Set();
@@ -87,7 +89,7 @@ export function detectConflicts(chunks) {
       const sign = right.canonical - left.canonical;
       conflicts.push({
         id: `DIFF-${String(conflicts.length + 1).padStart(2, '0')}`,
-        parameter: `${left.family[0].toUpperCase()}${left.family.slice(1)} setpoint mismatch`,
+        parameter: copy.family[left.family] || `${left.family} setpoint mismatch`,
         unit: left.unit,
         oemDoc: `${left.chunk.filename} (P.${left.chunk.page})`,
         oemValue: `${left.value} ${left.unit}`,

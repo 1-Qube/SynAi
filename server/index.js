@@ -104,7 +104,8 @@ app.post('/api/query', async (req, res) => {
   try {
     const documentIds = Array.isArray(req.body.documentIds) ? req.body.documentIds : [];
     const history = Array.isArray(req.body.history) ? req.body.history : [];
-    const result = await answerQuestion({ query, documentIds, history });
+    const language = ['en', 'ru', 'kk'].includes(req.body?.language) ? req.body.language : 'en';
+    const result = await answerQuestion({ query, documentIds, history, language });
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || 'Query failed' });
@@ -124,14 +125,12 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ error: error.message || 'Server error' });
 });
 
-const distDir = path.resolve('dist');
-if (fs.existsSync(path.join(distDir, 'index.html'))) {
-  app.use(express.static(distDir));
-  app.use((req, res, next) => {
-    if (req.method !== 'GET' || req.path.startsWith('/api')) return next();
-    res.sendFile(path.join(distDir, 'index.html'));
-  });
-}
+const webDir = path.resolve('web');
+app.use(express.static(webDir));
+app.use((req, res, next) => {
+  if (req.method !== 'GET' || req.path.startsWith('/api')) return next();
+  res.sendFile(path.join(webDir, 'index.html'));
+});
 
 app.listen(port, '127.0.0.1', () => {
   console.log(`SynAI listening on http://127.0.0.1:${port}`);

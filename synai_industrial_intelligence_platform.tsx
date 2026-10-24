@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { UI } from './src/i18n.js';
 import { 
   ArrowUpRight, 
   ArrowRight, 
@@ -24,21 +25,9 @@ import {
 // ============================================================================
 // Query shortcuts only. These strings are not answers and contain no document text.
 const PRESET_PROMPTS = [
-  {
-    id: 'PROMPT-COMPARE',
-    shortLabel: 'Compare included documents for conflicts',
-    fullQuery: 'Compare the included documents and report conflicting values. Cite each document name, page number, and excerpt. If none conflict, say so.'
-  },
-  {
-    id: 'PROMPT-LIMITS',
-    shortLabel: 'List limits stated in the corpus',
-    fullQuery: 'List operating limits, setpoints, and tolerances explicitly stated in the included documents. Cite each value. Do not add values that are not in the text.'
-  },
-  {
-    id: 'PROMPT-ABSENT',
-    shortLabel: 'Ask whether a limit is stated',
-    fullQuery: 'What maximum seal chamber temperature is stated in the included documents? If it is not stated, say that it was not found.'
-  }
+  { id: 'PROMPT-COMPARE', labelKey: 'presetCompare', queryKey: 'presetCompareQ' },
+  { id: 'PROMPT-LIMITS', labelKey: 'presetLimits', queryKey: 'presetLimitsQ' },
+  { id: 'PROMPT-ABSENT', labelKey: 'presetAbsent', queryKey: 'presetAbsentQ' }
 ];
 
 // ARCHITECTURAL CROSSHAIR INTERSECTION MARKER
@@ -222,6 +211,15 @@ export default function App() {
   // Navigation & Coordinate Readout State
   const [coords, setCoords] = useState({ x: 412, y: 288 });
   const [utcTime, setUtcTime] = useState('14:02:49 UTC');
+  const [page, setPage] = useState(() => {
+    const hash = window.location.hash.replace('#', '');
+    return hash === 'workbench' || hash === 'verification' || hash === 'architecture' ? hash : 'home';
+  });
+  const [language, setLanguage] = useState(() => {
+    const saved = window.localStorage.getItem('synai-lang');
+    return saved === 'ru' || saved === 'kk' ? saved : 'en';
+  });
+  const t = (key) => UI[language]?.[key] || UI.en[key] || key;
 
   // Document Corpus & Workbench State
   const [documents, setDocuments] = useState([]);
@@ -287,7 +285,7 @@ export default function App() {
         if (Array.isArray(data.conflicts)) setContradictionDiffs(data.conflicts);
       })
       .catch(() => {
-        if (!cancelled) setUploadNotification('API OFFLINE — START THE SYNAI BACKEND');
+        if (!cancelled) setUploadNotification(t('apiOffline'));
       });
     return () => {
       cancelled = true;
@@ -299,19 +297,31 @@ export default function App() {
   }, [messages, isSynthesizing]);
 
 
-  // Scroll to section helper
+  useEffect(() => {
+    window.localStorage.setItem('synai-lang', language);
+    document.documentElement.lang = language;
+  }, [language]);
+
+  const openPage = (next) => {
+    setPage(next);
+    window.history.replaceState(null, '', next === 'home' ? '#top' : `#${next}`);
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  };
+
+  // Page navigation. Each major section is its own view.
   const scrollToSection = (ref) => {
-    if (ref && ref.current) {
-      ref.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    if (ref === workbenchRef) openPage('workbench');
+    else if (ref === verificationRef) openPage('verification');
+    else if (ref === architectureRef) openPage('architecture');
+    else openPage('home');
   };
 
   // Resolve currently inspected document & clause
   const currentDoc = documents.find((d) => d.id === activeInspection.docId) || documents[0] || {
     id: '—',
     code: 'NONE',
-    filename: 'NO DOCUMENT IN SCOPE',
-    title: 'Upload a technical file to bind page excerpts. Nothing is invented before ingest.',
+    filename: t('noSource'),
+    title: t('noSourceTitle'),
     rev: '—',
     hash: '—',
     pages: 0,
@@ -391,7 +401,8 @@ export default function App() {
         body: JSON.stringify({
           query: trimmed,
           documentIds: documents.filter((doc) => doc.included).map((doc) => doc.id),
-          history
+          history,
+          language
         })
       });
       const data = await response.json();
@@ -404,11 +415,11 @@ export default function App() {
         role: 'assistant',
         timestamp: ts,
         latency: '0ms',
-        status: 'NOT ANSWERED',
+        status: t('notAnswered'),
         statusType: 'warning',
-        summary: error.message || 'The backend did not return an answer.',
+        summary: error.message || t('queryFailed'),
         findings: [],
-        recommendation: 'ABSTAINED: no technical value was inferred.'
+        recommendation: t('abstained')
       }]);
     } finally {
       setIsSynthesizing(false);
@@ -420,7 +431,7 @@ export default function App() {
     if (!fileList || fileList.length === 0) return;
     const files = Array.from(fileList).filter((file) => file && file.size >= 0);
     for (const file of files) {
-      setUploadNotification(`INGESTING ${file.name.toUpperCase()}...`);
+      setUploadNotification(`${t('ingesting')} ${file.name.toUpperCase()}...`);
       const form = new FormData();
       form.append('file', file);
       try {
@@ -436,14 +447,16 @@ export default function App() {
         }
         setUploadNotification(data.notification || `INGESTED ${file.name.toUpperCase()}`);
       } catch (error) {
-        setUploadNotification(`INGEST FAILED: ${error.message}`);
+        setUploadNotification(`${t('ingestFailed')}: ${error.message}`);
       }
     }
     setTimeout(() => setUploadNotification(null), 6000);
   };
 
   const runPresetPrompt = (preset) => {
-    submitQuery(typeof preset === 'string' ? preset : preset.fullQuery);
+    if (typeof preset === 'string') submitQuery(preset);
+    else if (preset.queryKey) submitQuery(t(preset.queryKey));
+    else submitQuery(preset.fullQuery);
   };
 
   const handleCustomQuerySubmit = (event) => {
@@ -499,10 +512,10 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#F6F5F2] text-[#0D0D0D] antialiased selection:bg-[#FF3B00] selection:text-[#F6F5F2]">
+    <div className="min-h-screen bg-[#F6F5F2] text-[#0D0D0D] antialiased selection:bg-[#FF3B00] selection:text-[#F6F5F2]" style={language === 'en' ? undefined : { fontFamily: "'Manrope', sans-serif" }}>
       {/* Architectural Font & Precision Styling */}
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
         
         :root {
           --font-sans: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -550,9 +563,23 @@ export default function App() {
                 SYNAI <span className="text-[#686662] font-normal">//</span> PHOSMIND
               </span>
             </a>
-            <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 border border-[#E2E0DC] bg-[#EFECE6]">
-              <span className="w-1.5 h-1.5 bg-[#008A4B]" />
-              <span className="font-mono-tech text-[10px] tracking-wider text-[#0D0D0D]">SYS.ONLINE</span>
+            <div className="flex items-center gap-1.5">
+              <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 border border-[#E2E0DC] bg-[#EFECE6]">
+                <span className="w-1.5 h-1.5 bg-[#008A4B]" />
+                <span className="font-mono-tech text-[10px] tracking-wider text-[#0D0D0D]">{t('sysOnline')}</span>
+              </div>
+              <div className="flex border border-[#0D0D0D] font-mono-tech text-[10px]">
+                {['en', 'ru', 'kk'].map((code) => (
+                  <button
+                    key={code}
+                    type="button"
+                    onClick={() => setLanguage(code)}
+                    className={`px-1.5 py-0.5 ${language === code ? 'bg-[#0D0D0D] text-[#F6F5F2]' : 'bg-[#F6F5F2] text-[#0D0D0D]'}`}
+                  >
+                    {code.toUpperCase()}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -562,21 +589,21 @@ export default function App() {
               onClick={() => scrollToSection(workbenchRef)}
               className="px-4 py-3.5 border-r border-[#E2E0DC] text-left hover:bg-[#0D0D0D] hover:text-[#F6F5F2] transition-colors flex items-center justify-between group"
             >
-              <span>01 / WORKBENCH</span>
+              <span>{t('navWorkbench')}</span>
               <span className="text-[10px] text-[#686662] group-hover:text-[#FF3B00]">[LIVE]</span>
             </button>
             <button
               onClick={() => scrollToSection(verificationRef)}
               className="px-4 py-3.5 border-r border-[#E2E0DC] text-left hover:bg-[#0D0D0D] hover:text-[#F6F5F2] transition-colors flex items-center justify-between group"
             >
-              <span>02 / VERIFICATION</span>
+              <span>{t('navVerification')}</span>
               <span className="text-[10px] text-[#FF3B00]">[DIFF]</span>
             </button>
             <button
               onClick={() => scrollToSection(architectureRef)}
               className="px-4 py-3.5 text-left hover:bg-[#0D0D0D] hover:text-[#F6F5F2] transition-colors flex items-center justify-between group"
             >
-              <span>03 / ARCHITECTURE</span>
+              <span>{t('navArchitecture')}</span>
               <span className="text-[10px] text-[#686662] group-hover:text-[#F6F5F2]">[SPEC]</span>
             </button>
           </nav>
@@ -596,16 +623,39 @@ export default function App() {
               onClick={() => scrollToSection(workbenchRef)}
               className="w-full px-4 sm:px-5 py-3.5 bg-[#0D0D0D] text-[#F6F5F2] hover:bg-[#FF3B00] hover:text-[#0D0D0D] transition-colors font-mono-tech text-xs font-medium tracking-wider flex items-center justify-between"
             >
-              <span>LAUNCH TERMINAL</span>
+              <span>{t('launch')}</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
       </header>
 
+      <nav className="sticky top-0 z-40 border-b border-[#E2E0DC] bg-[#F6F5F2]">
+        <div className="max-w-[1600px] mx-auto grid grid-cols-2 sm:grid-cols-4 font-mono-tech text-[11px] sm:text-xs">
+          {[
+            ['home', t('home')],
+            ['workbench', t('navWorkbench')],
+            ['verification', t('navVerification')],
+            ['architecture', t('navArchitecture')]
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => openPage(id)}
+              className={`px-4 py-3 text-left border-r border-b sm:border-b-0 border-[#E2E0DC] transition-colors ${
+                page === id ? 'bg-[#0D0D0D] text-[#F6F5F2]' : 'hover:bg-[#EFECE6]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
       {/* =====================================================================
           2. ASYMMETRIC EDITORIAL HERO SECTION
       ====================================================================== */}
+      {page === 'home' && (
       <section id="top" className="border-b border-[#E2E0DC] relative">
         <div className="max-w-[1600px] mx-auto grid grid-cols-12">
           
@@ -616,26 +666,26 @@ export default function App() {
             {/* Top Sub-Header Strip */}
             <div className="px-6 sm:px-10 py-3 border-b border-[#E2E0DC] flex flex-wrap items-center justify-between gap-2 font-mono-tech text-[11px] text-[#686662]">
               <div className="flex items-center gap-3">
-                <span className="text-[#0D0D0D] font-medium">DOC.INTELLIGENCE ENGINE // BUILD 4.18.0</span>
+                <span className="text-[#0D0D0D] font-medium">{t('engine')}</span>
                 <span>·</span>
                 <span>P&amp;ID / ISO / DIN / PLC LOGIC</span>
               </div>
-              <span className="text-[#008A4B]">ZERO GENERATIVE EXTRAPOLATION</span>
+              <span className="text-[#008A4B]">{t('zero')}</span>
             </div>
 
             {/* Main Oversized Headline & Copy */}
             <div className="px-6 sm:px-10 py-12 sm:py-16 lg:py-20">
               <div className="inline-flex items-center gap-2 px-2.5 py-1 border border-[#0D0D0D] mb-6 font-mono-tech text-[11px] uppercase tracking-wider">
                 <span className="w-2 h-2 bg-[#FF3B00]" />
-                <span>SOVEREIGN INDUSTRIAL TECHNICAL INTELLIGENCE</span>
+                <span>{t('kicker')}</span>
               </div>
 
               <h1 className="text-4xl sm:text-6xl xl:text-[68px] font-bold tracking-[-0.035em] leading-[0.98] text-[#0D0D0D] max-w-4xl">
-                Deterministic answers from sovereign technical documentation.
+                {t('heroTitle')}
               </h1>
 
               <p className="mt-8 text-base sm:text-lg text-[#0D0D0D]/80 max-w-2xl leading-relaxed font-normal">
-                SynAI ingests complex engineering libraries—piping and instrumentation diagrams, OEM maintenance manuals, ASME/ISO standards, and fail-safe PLC schematics—binding every synthesized answer to an exact page coordinate, revision hash, and clause bounding box.
+                {t('heroBody')}
               </p>
 
               {/* Sharp CTA Action Bar */}
@@ -644,7 +694,7 @@ export default function App() {
                   onClick={() => scrollToSection(workbenchRef)}
                   className="px-7 py-4 bg-[#0D0D0D] text-[#F6F5F2] hover:bg-[#FF3B00] hover:text-[#0D0D0D] transition-colors font-mono-tech text-xs sm:text-sm font-medium tracking-wider uppercase flex items-center gap-3"
                 >
-                  <span>INITIALIZE DOCUMENT MATRIX</span>
+                  <span>{t('ctaMatrix')}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
                 <button
@@ -654,7 +704,7 @@ export default function App() {
                   }}
                   className="px-6 py-4 bg-transparent border border-[#0D0D0D] text-[#0D0D0D] hover:bg-[#0D0D0D] hover:text-[#F6F5F2] transition-colors font-mono-tech text-xs sm:text-sm tracking-wider uppercase flex items-center gap-2"
                 >
-                  <span>RUN CONTRADICTION AUDIT</span>
+                  <span>{t('ctaAudit')}</span>
                   <ArrowUpRight className="w-4 h-4" />
                 </button>
               </div>
@@ -663,19 +713,19 @@ export default function App() {
             {/* Bottom 3-Cell Technical Spec Strip */}
             <div className="grid grid-cols-1 sm:grid-cols-3 border-t border-[#E2E0DC] font-mono-tech text-xs">
               <div className="p-5 sm:px-8 border-b sm:border-b-0 sm:border-r border-[#E2E0DC]">
-                <div className="text-[10px] text-[#686662] uppercase mb-1">01 // CITATION ARCHITECTURE</div>
-                <div className="text-[#0D0D0D] font-medium">BBOX Coordinate Locking</div>
-                <div className="text-[11px] text-[#686662] mt-0.5">Every claim pinned to [X1, Y1, X2, Y2]</div>
+                <div className="text-[10px] text-[#686662] uppercase mb-1">{t('spec1k')}</div>
+                <div className="text-[#0D0D0D] font-medium">{t('spec1t')}</div>
+                <div className="text-[11px] text-[#686662] mt-0.5">{t('spec1s')}</div>
               </div>
               <div className="p-5 sm:px-8 border-b sm:border-b-0 sm:border-r border-[#E2E0DC]">
-                <div className="text-[10px] text-[#686662] uppercase mb-1">02 // CROSS-CORPUS DIFF</div>
-                <div className="text-[#0D0D0D] font-medium">OEM vs. Site SOP Reconciliation</div>
-                <div className="text-[11px] text-[#686662] mt-0.5">Detects threshold &amp; unit drift</div>
+                <div className="text-[10px] text-[#686662] uppercase mb-1">{t('spec2k')}</div>
+                <div className="text-[#0D0D0D] font-medium">{t('spec2t')}</div>
+                <div className="text-[11px] text-[#686662] mt-0.5">{t('spec2s')}</div>
               </div>
               <div className="p-5 sm:px-8">
-                <div className="text-[10px] text-[#686662] uppercase mb-1">03 // DEPLOYMENT SECURITY</div>
-                <div className="text-[#0D0D0D] font-medium">Air-Gapped / On-Premise Ready</div>
-                <div className="text-[11px] text-[#686662] mt-0.5">Zero model training on plant corpus</div>
+                <div className="text-[10px] text-[#686662] uppercase mb-1">{t('spec3k')}</div>
+                <div className="text-[#0D0D0D] font-medium">{t('spec3t')}</div>
+                <div className="text-[11px] text-[#686662] mt-0.5">{t('spec3s')}</div>
               </div>
             </div>
           </div>
@@ -686,16 +736,16 @@ export default function App() {
               {/* Manifest Header */}
               <div className="px-6 py-3 border-b border-[#E2E0DC] flex items-center justify-between font-mono-tech text-[11px]">
                 <span className="font-semibold text-[#0D0D0D] uppercase tracking-wider">
-                  ACTIVE CORPUS MANIFEST ({documents.length})
+                  {t('manifest')} ({documents.length})
                 </span>
-                <span className="text-[#686662]">SHA-256 VERIFIED</span>
+                <span className="text-[#686662]">{t('verified')}</span>
               </div>
 
               {/* Interactive Document Rows */}
               <div className="divide-y divide-[#E2E0DC]">
                 {documents.length === 0 && (
                   <div className="p-5 font-mono-tech text-xs text-[#686662]">
-                    NO UPLOADED DOCUMENTS. INGEST A FILE IN THE WORKBENCH TO INDEX IT.
+                    {t('emptyDocs')}
                   </div>
                 )}
                 {documents.map((doc, idx) => {
@@ -778,7 +828,7 @@ export default function App() {
                 </div>
                 <div className="p-3 border border-[#E2E0DC] bg-[#EFECE6]/60">
                   <div className="text-[10px] text-[#686662]">ACTIVE CONFLICTS</div>
-                  <div className="text-base font-semibold text-[#FF3B00] mt-0.5">{String(contradictionDiffs.filter((item) => item.severity !== 'ALIGNED').length).padStart(2, '0')} FLAGGED</div>
+                  <div className="text-base font-semibold text-[#FF3B00] mt-0.5">{String(contradictionDiffs.filter((item) => item.severity !== 'ALIGNED').length).padStart(2, '0')} {t('flagged')}</div>
                 </div>
               </div>
             </div>
@@ -786,11 +836,13 @@ export default function App() {
 
         </div>
       </section>
+      )}
 
       {/* =====================================================================
           3. INTERACTIVE DOCUMENT-CHAT & CITATION WORKBENCH (01 / WORKBENCH)
       ====================================================================== */}
-      <section ref={workbenchRef} className="border-b border-[#E2E0DC] scroll-mt-14">
+      {page === 'workbench' && (
+      <section ref={workbenchRef} className="border-b border-[#E2E0DC]">
         <div className="max-w-[1600px] mx-auto">
           
           {/* Section Header Bar */}
@@ -833,8 +885,8 @@ export default function App() {
               <div>
                 {/* Pane Subheader */}
                 <div className="px-5 py-3 border-b border-[#E2E0DC] flex items-center justify-between font-mono-tech text-[11px] text-[#686662]">
-                  <span>PANE A // CORPUS SCOPE</span>
-                  <span>{documents.filter((d) => d.included).length} OF {documents.length} ACTIVE</span>
+                  <span>{t('paneA')}</span>
+                  <span>{documents.filter((d) => d.included).length} / {documents.length} {t('activeOf')}</span>
                 </div>
 
                 {/* Drag-and-Drop Ingestion Box */}
@@ -866,15 +918,15 @@ export default function App() {
                   >
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-mono-tech text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-[#0D0D0D] text-[#F6F5F2]">
-                        INGEST SPECIFICATION
+                        {t('ingest')}
                       </span>
                       <Upload className="w-3.5 h-3.5 text-[#0D0D0D]" />
                     </div>
                     <p className="font-mono-tech text-xs font-medium text-[#0D0D0D]">
-                      DROP TECHNICAL PDF / DWG / SOP OR CLICK TO INGEST
+                      {t('drop')}
                     </p>
                     <p className="font-mono-tech text-[10px] text-[#686662] mt-1">
-                      Auto-extracts vector tables, P&amp;ID tags &amp; SHA-256 revision hashes.
+                      {t('dropHint')}
                     </p>
                   </div>
                 </div>
@@ -895,7 +947,7 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => toggleDocumentScope(doc.id)}
-                            title="Include/Exclude from query scope"
+                            title={t('scopeTitle')}
                             className={`mt-0.5 w-4 h-4 border flex items-center justify-center flex-shrink-0 transition-colors ${
                               doc.included
                                 ? 'bg-[#0D0D0D] border-[#0D0D0D] text-[#F6F5F2]'
@@ -913,9 +965,9 @@ export default function App() {
                             <div className="flex items-center justify-between font-mono-tech text-[10px]">
                               <span className="font-semibold text-[#0D0D0D]">{doc.id} · {doc.rev}</span>
                               {doc.status === 'CONFLICT DETECTED' ? (
-                                <span className="text-[#FF3B00] font-medium">! CONFLICT</span>
+                                <span className="text-[#FF3B00] font-medium">{t('conflict')}</span>
                               ) : (
-                                <span className="text-[#008A4B]">INDEXED</span>
+                                <span className="text-[#008A4B]">{t('indexed')}</span>
                               )}
                             </div>
                             <div className="font-mono-tech text-xs font-semibold text-[#0D0D0D] mt-0.5 break-all">
@@ -976,15 +1028,15 @@ export default function App() {
               
               {/* Pane Subheader */}
               <div className="px-5 py-3 border-b border-[#E2E0DC] flex items-center justify-between font-mono-tech text-[11px] text-[#686662]">
-                <span>PANE B // DETERMINISTIC TECHNICAL DIALOGUE</span>
-                <span>TEMP: 0.00 · CITATION LOCK</span>
+                <span>{t('paneB')}</span>
+                <span>{t('citationLock')}</span>
               </div>
 
               {/* Conversation Message Stream */}
               <div className="p-5 space-y-6 overflow-y-auto max-h-[540px] flex-1">
                 {messages.length === 0 && (
                   <div className="border border-[#E2E0DC] p-4 font-mono-tech text-xs text-[#686662]">
-                    NO QUERIES YET. ANSWERS ARE GENERATED ONLY FROM UPLOADED DOCUMENT TEXT.
+                    {t('emptyChat')}
                   </div>
                 )}
                 {messages.map((msg) => {
@@ -992,7 +1044,7 @@ export default function App() {
                     return (
                       <div key={msg.id} className="border border-[#0D0D0D] bg-[#EFECE6] p-4">
                         <div className="flex items-center justify-between font-mono-tech text-[10px] text-[#686662] mb-1.5">
-                          <span className="font-semibold text-[#0D0D0D]">ENGINEER.QUERY // INPUT</span>
+                          <span className="font-semibold text-[#0D0D0D]">{t('engineer')}</span>
                           <span>{msg.timestamp}</span>
                         </div>
                         <p className="text-sm font-medium text-[#0D0D0D] leading-snug">
@@ -1100,7 +1152,7 @@ export default function App() {
 
                 {isSynthesizing && (
                   <div className="p-4 border border-[#0D0D0D] bg-[#EFECE6] font-mono-tech text-xs flex items-center justify-between">
-                    <span>SCANNING NORMATIVE CLAUSES &amp; BBOX COORDINATES...</span>
+                    <span>{t('scanning')}</span>
                     <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#FF3B00]" />
                   </div>
                 )}
@@ -1110,7 +1162,7 @@ export default function App() {
               {/* Bottom Prompt Chips & Custom Query Input */}
               <div className="border-t border-[#E2E0DC] bg-[#EFECE6]/60 p-4">
                 <div className="font-mono-tech text-[10px] text-[#686662] uppercase mb-2">
-                  VERIFICATION QUERIES // CLICK TO EXECUTE:
+                  {t('presets')}
                 </div>
                 <div className="flex flex-wrap gap-1.5 mb-3">
                   {PRESET_PROMPTS.map((preset) => (
@@ -1120,7 +1172,7 @@ export default function App() {
                       onClick={() => runPresetPrompt(preset)}
                       className="font-mono-tech text-[11px] px-2.5 py-1 bg-[#F6F5F2] border border-[#E2E0DC] hover:border-[#0D0D0D] hover:bg-[#0D0D0D] hover:text-[#F6F5F2] transition-colors text-left"
                     >
-                      {preset.shortLabel} →
+                      {t(preset.labelKey)} →
                     </button>
                   ))}
                 </div>
@@ -1134,14 +1186,14 @@ export default function App() {
                     type="text"
                     value={inputQuery}
                     onChange={(e) => setInputQuery(e.target.value)}
-                    placeholder="Query technical parameters, torque specs, or PLC fault codes..."
+                    placeholder={t('placeholder')}
                     className="w-full py-3 pr-3 bg-transparent text-xs sm:text-sm text-[#0D0D0D] placeholder-[#686662] focus:outline-none font-mono-tech"
                   />
                   <button
                     type="submit"
                     className="px-4 bg-[#0D0D0D] text-[#F6F5F2] hover:bg-[#FF3B00] hover:text-[#0D0D0D] transition-colors font-mono-tech text-xs font-medium uppercase flex items-center gap-1.5 flex-shrink-0"
                   >
-                    <span>EXECUTE</span>
+                    <span>{t('execute')}</span>
                     <CornerDownLeft className="w-3.5 h-3.5" />
                   </button>
                 </form>
@@ -1155,7 +1207,7 @@ export default function App() {
               <div>
                 {/* Pane Subheader */}
                 <div className="px-5 py-3 border-b border-[#E2E0DC] flex items-center justify-between font-mono-tech text-[11px]">
-                  <span className="text-[#686662]">PANE C // SOURCE CLAUSE INSPECTOR</span>
+                  <span className="text-[#686662]">{t('paneC')}</span>
                   <span className="px-1.5 py-0.5 bg-[#FF3B00] text-[#F6F5F2] text-[10px]">
                     BBOX LOCKED
                   </span>
@@ -1257,11 +1309,13 @@ export default function App() {
           </div>
         </div>
       </section>
+      )}
 
       {/* =====================================================================
           4. VERIFICATION & CONTRADICTION DETECTION MATRIX (02 / VERIFICATION)
       ====================================================================== */}
-      <section ref={verificationRef} className="border-b border-[#E2E0DC] scroll-mt-14 relative">
+      {page === 'verification' && (
+      <section ref={verificationRef} className="border-b border-[#E2E0DC] relative">
         <div className="max-w-[1600px] mx-auto">
           
           {/* Section Header & 3-Mode Switcher */}
@@ -1270,14 +1324,14 @@ export default function App() {
               <div className="flex items-center gap-2.5 mb-3">
                 <span className="font-mono-tech text-xs px-2 py-0.5 bg-[#0D0D0D] text-[#F6F5F2]">02</span>
                 <span className="font-mono-tech text-xs text-[#686662] uppercase tracking-wider">
-                  AUTOMATED ENGINEERING RECONCILIATION
+                  {t('section02')}
                 </span>
               </div>
               <h2 className="text-2xl sm:text-4xl font-bold tracking-tight text-[#0D0D0D]">
-                Cross-document contradiction &amp; revision drift matrix.
+                {t('section02title')}
               </h2>
               <p className="mt-3 text-sm text-[#686662] leading-relaxed">
-                Industrial incidents frequently originate where site-level field procedures drift from original OEM operating envelopes. SynAI continuously reconciles parameters across manuals, tables, and revisions.
+                {t('section02body')}
               </p>
             </div>
 
@@ -1287,21 +1341,21 @@ export default function App() {
                 {
                   id: 'CONTRADICTION',
                   num: '[01]',
-                  title: 'CROSS-DOCUMENT CONTRADICTION',
+                  title: t('tabConflict'),
                   sub: 'OEM Spec vs. Plant Field SOP Diff',
                   badge: `${contradictionDiffs.filter((item) => item.severity !== 'ALIGNED').length} CONFLICTS`
                 },
                 {
                   id: 'CLAUSE',
                   num: '[02]',
-                  title: 'CLAUSE VERIFICATION TRACE',
+                  title: t('tabClause'),
                   sub: 'Claim-to-Bounding-Box Audit',
                   badge: clauseTraces.length ? `${clauseTraces.length} TRACED` : 'NONE'
                 },
                 {
                   id: 'REVISION',
                   num: '[03]',
-                  title: 'REVISION DRIFT AUDIT',
+                  title: t('tabRevision'),
                   sub: '2021-REV-A vs. 2026-REV-C Delta',
                   badge: revisionAudits.length ? `${revisionAudits.length} RECORDED` : 'NONE'
                 }
@@ -1352,7 +1406,7 @@ export default function App() {
               {/* Left 7 Cols: Parameter Diff Table */}
               <div className="col-span-12 lg:col-span-7 border-b lg:border-b-0 lg:border-r border-[#E2E0DC] divide-y divide-[#E2E0DC]">
                 <div className="px-6 py-3 bg-[#EFECE6] font-mono-tech text-[11px] text-[#686662] flex items-center justify-between">
-                  <span>PARAMETER RECONCILIATION TABLE (UPLOADED DOCUMENTS)</span>
+                  <span>{t('tableHead')}</span>
                   <span>SELECT ROW TO INSPECT RESOLUTION</span>
                 </div>
 
@@ -1408,7 +1462,7 @@ export default function App() {
                   if (!activeDiff) {
                     return (
                       <div className="font-mono-tech text-xs text-[#686662]">
-                        NO CONFLICTS EXTRACTED FROM UPLOADED DOCUMENTS.
+                        {t('noConflicts')}
                       </div>
                     );
                   }
@@ -1498,11 +1552,11 @@ export default function App() {
           {verificationMode === 'CLAUSE' && (
             <div className="divide-y divide-[#E2E0DC]">
               <div className="px-6 py-3 bg-[#EFECE6] font-mono-tech text-[11px] text-[#686662] flex items-center justify-between">
-                <span>CLAIM-TO-EVIDENCE AUDIT LOG // CLICK ANY SYNTHESIZED CLAIM TO INSPECT VERBATIM CLAUSE</span>
+                <span>{t('claimLog')}</span>
                 <span className="text-[#008A4B]">CONFIDENCE: DETERMINISTIC BOUND</span>
               </div>
               {clauseTraces.length === 0 && (
-                <div className="p-6 font-mono-tech text-xs text-[#686662]">NO CLAIM TRACES YET. EXECUTE A QUERY AGAINST UPLOADED DOCUMENTS.</div>
+                <div className="p-6 font-mono-tech text-xs text-[#686662]">{t('noTraces')}</div>
               )}
               {clauseTraces.map((item) => {
                 const isSelected = selectedClaimId === item.id;
@@ -1543,11 +1597,11 @@ export default function App() {
           {verificationMode === 'REVISION' && (
             <div className="divide-y divide-[#E2E0DC]">
               <div className="px-6 py-3 bg-[#EFECE6] font-mono-tech text-[11px] text-[#686662] flex items-center justify-between">
-                <span>SPECIFICATION REVISION DELTA // UPLOADED DOCUMENTS ONLY</span>
+                <span>{t('revisionHead')}</span>
                 <span className="text-[#FF3B00]">{String(revisionAudits.length).padStart(2, '0')} RECORDED</span>
               </div>
               {revisionAudits.length === 0 && (
-                <div className="p-6 font-mono-tech text-xs text-[#686662]">NO REVISION PAIRS WERE EXTRACTED FROM UPLOADED DOCUMENTS.</div>
+                <div className="p-6 font-mono-tech text-xs text-[#686662]">{t('noRevisions')}</div>
               )}
               {revisionAudits.map((rev) => (
                 <div key={rev.id} className="p-6 sm:px-10 grid grid-cols-12 gap-6 items-start bg-[#F6F5F2]">
@@ -1579,11 +1633,13 @@ export default function App() {
 
         </div>
       </section>
+      )}
 
       {/* =====================================================================
           5. DETERMINISTIC INGESTION & SYNTHESIS WORKFLOW (03 / ARCHITECTURE)
       ====================================================================== */}
-      <section ref={architectureRef} className="border-b border-[#E2E0DC] scroll-mt-14">
+      {page === 'architecture' && (
+      <section ref={architectureRef} className="border-b border-[#E2E0DC]">
         <div className="max-w-[1600px] mx-auto">
           
           {/* Section Header */}
@@ -1650,6 +1706,7 @@ export default function App() {
 
         </div>
       </section>
+      )}
 
       {/* =====================================================================
           6. RESTRAINED ARCHITECTURAL FOOTER
