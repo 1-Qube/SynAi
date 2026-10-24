@@ -1,6 +1,5 @@
 node_modules/
 dist/
-.env
 data/uploads/
 data/corpus.json
 *.log
