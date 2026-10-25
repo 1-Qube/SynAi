@@ -1,6 +1,6 @@
 import { allChunks, clauseFromChunk, markConflictDocs } from './corpus.js';
 import { detectConflicts } from './conflicts.js';
-import { expandSearchQuery, generateGroundedAnswer, hasGeminiKey } from './gemini.js';
+import { GeminiError, generateGroundedAnswer, hasGeminiKey } from './gemini.js';
 import { copyFor } from './i18n.js';
 import { retrievalQuery, searchChunks } from './retrieve.js';
 
@@ -13,17 +13,17 @@ function numbersAreGrounded(text, sources) {
   return numbersIn(text).every((value) => allowed.has(value));
 }
 
-function abstain(query, reason, language = 'en') {
+function abstain(query, reason, language = 'en', latency = '0ms') {
   const copy = copyFor(language);
   return {
     message: {
       role: 'assistant',
-      latency: '0ms',
+      latency,
       status: copy.notFound,
       statusType: 'warning',
       summary: reason || copy.notFoundSummary(query),
       findings: [],
-      recommendation: copy.abstain
+      recommendation: ''
     },
     clauses: [],
     conflicts: detectConflicts(allChunks(), language),
@@ -31,11 +31,58 @@ function abstain(query, reason, language = 'en') {
   };
 }
 
-function citation(chunk) {
+const EXCERPT_GROUPS = [
+  ['pressure', 'press', 'давлен', 'қысым'],
+  ['maximum', 'max', 'максимальн'],
+  ['operating', 'operat', 'рабоч'],
+  ['permitted', 'permit', 'allow', 'разреш', 'допустим'],
+  ['flow', 'расход', 'ағын'],
+  ['pump', 'насос', 'сорғы'],
+  ['motor', 'двигател']
+];
+
+function supportingExcerpt(chunk, query) {
+  const lines = String(chunk.text || '')
+    .split(/\n+/)
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter((line) => line.length > 8 && !/^synai\s·/i.test(line) && !/^страница\s+\d/i.test(line));
+  if (!lines.length) return '';
+  const foldedQuery = String(query || '').toLowerCase();
+  const tokens = foldedQuery.split(/[^a-z0-9\u0400-\u04ff]+/i).filter((token) => token.length > 3);
+  const active = EXCERPT_GROUPS
+    .filter((group) => group.some((stem) => foldedQuery.includes(stem)))
+    .flat();
+  const score = (line) => {
+    const folded = line.toLowerCase();
+    return tokens.reduce((sum, token) => sum + (folded.includes(token) ? 2 : 0), 0)
+      + active.reduce((sum, stem) => sum + (folded.includes(stem) ? 3 : 0), 0);
+  };
+  let bestIndex = 0;
+  let bestScore = -1;
+  lines.forEach((line, index) => {
+    const value = score(line);
+    if (value > bestScore) {
+      bestScore = value;
+      bestIndex = index;
+    }
+  });
+  const picked = [lines[bestIndex]];
+  const next = lines[bestIndex + 1];
+  if (next && (lines[bestIndex].endsWith('?') || /^(о:|a:)/i.test(next))) picked.push(next);
+  let text = picked.join(' ');
+  if (text.length > 220) text = `${text.slice(0, 217).trim()}…`;
+  return text;
+}
+
+function citation(chunk, query) {
   return {
     docId: chunk.docId,
     clauseKey: chunk.clauseKey,
-    label: `${chunk.docId} · ${chunk.clauseKey}`
+    filename: chunk.filename,
+    page: chunk.page,
+    section: chunk.section,
+    excerpt: supportingExcerpt(chunk, query),
+    label: `${chunk.filename} · p.${chunk.page}`
   };
 }
 
@@ -48,6 +95,28 @@ function mergeClause(list, chunk) {
   });
 }
 
+function claimsNotFound(answer) {
+  if (!answer || answer.found === false) return true;
+  const text = `${answer.summary || ''} ${(answer.findings || []).map((item) => item.text || '').join(' ')}`;
+  return /not (specified|stated|found|contain)|does not (specify|state|contain)|cannot be found|не (указан|содержит|найден)|не найден|құжатта жоқ|көрсетілмеген/i.test(text)
+    && !numbersIn(text).length;
+}
+
+function sourcesFrom(findings, hits, clauses, query) {
+  const sources = [];
+  for (const finding of findings || []) {
+    for (const index of [finding.evidenceIndex, finding.evidenceIndex2]) {
+      if (!Number.isInteger(index)) continue;
+      const hit = hits[index];
+      if (!hit) continue;
+      mergeClause(clauses, hit.chunk);
+      if (sources.some((item) => item.docId === hit.chunk.docId && item.clauseKey === hit.chunk.clauseKey)) continue;
+      sources.push(citation(hit.chunk, query));
+    }
+  }
+  return sources;
+}
+
 export async function answerQuestion({ query, documentIds, history, language = 'en' }) {
   const started = Date.now();
   const copy = copyFor(language);
@@ -56,14 +125,10 @@ export async function answerQuestion({ query, documentIds, history, language = '
     return abstain(query, copy.noDocs, language);
   }
 
-  let expanded = retrievalQuery(query, history);
-  if (/[\u0400-\u04FF]/.test(expanded)) {
-    const extra = await expandSearchQuery(expanded);
-    if (extra) expanded = `${expanded} ${extra}`;
-  }
-  const hits = searchChunks(expanded, scoped, 8);
+  const expanded = retrievalQuery(query, history);
+  const hits = searchChunks(expanded, scoped, 4);
   if (!hits.length) {
-    return abstain(query, copy.noMatch(query), language);
+    return abstain(query, copy.notFoundSummary(query), language, `${Date.now() - started}ms`);
   }
 
   const conflicts = detectConflicts(scoped, language);
@@ -71,108 +136,102 @@ export async function answerQuestion({ query, documentIds, history, language = '
     markConflictDocs(conflicts.flatMap((item) => [item.leftDocId, item.rightDocId]));
   }
 
-  let modelAnswer = null;
-  let modelError = null;
-  if (hasGeminiKey()) {
-    try {
-      const generated = await generateGroundedAnswer({ query, evidence: hits, history, languageName: copy.name });
-      modelAnswer = generated.answer;
-    } catch (error) {
-      modelError = error.message;
-    }
-  } else {
-    modelError = 'GEMINI_API_KEY is not configured';
+  if (!hasGeminiKey()) {
+    throw new GeminiError(
+      'GEMINI_API_KEY is not set. Add it to the server .env file. The key is never sent to the browser.',
+      'missing_key',
+      500
+    );
+  }
+
+  const generated = await generateGroundedAnswer({
+    query,
+    evidence: hits,
+    history,
+    languageName: copy.name
+  });
+  const modelAnswer = generated.answer;
+  const sources = hits.map((hit) => hit.chunk.text);
+  const latency = `${Date.now() - started}ms`;
+
+  if (claimsNotFound(modelAnswer)) {
+    const clauses = [];
+    const cited = sourcesFrom(modelAnswer?.findings, hits, clauses, query);
+    const summary = modelAnswer?.summary && (numbersAreGrounded(modelAnswer.summary, sources) || !numbersIn(modelAnswer.summary).length)
+      ? modelAnswer.summary
+      : copy.notFoundSummary(query);
+    return {
+      message: {
+        role: 'assistant',
+        latency,
+        status: copy.notFound,
+        statusType: 'warning',
+        summary,
+        findings: [],
+        sources: cited,
+        recommendation: ''
+      },
+      clauses,
+      conflicts,
+      traces: []
+    };
   }
 
   const clauses = [];
-  const traces = [];
   const findings = [];
+  (modelAnswer.findings || []).slice(0, 4).forEach((finding) => {
+    const first = hits[finding.evidenceIndex];
+    if (!first) return;
+    const second = Number.isInteger(finding.evidenceIndex2) ? hits[finding.evidenceIndex2] : null;
+    const claimSources = [first.chunk.text, second?.chunk.text].filter(Boolean);
+    const claim = `${finding.text || ''} ${finding.textCont || ''}`;
+    if (!numbersAreGrounded(claim, claimSources)) return;
+    mergeClause(clauses, first.chunk);
+    if (second) mergeClause(clauses, second.chunk);
+    findings.push({
+      label: finding.label || '',
+      text: finding.text || '',
+      citation1: citation(first.chunk, query),
+      textCont: '',
+      citation2: second ? citation(second.chunk, query) : null
+    });
+  });
 
-  if (modelAnswer && modelAnswer.found === false) {
-    const result = abstain(query, modelAnswer.summary || undefined, language);
-    result.message.latency = `${Date.now() - started}ms`;
+  const summary = modelAnswer.summary && numbersAreGrounded(modelAnswer.summary, sources)
+    ? modelAnswer.summary
+    : findings.length
+      ? copy.answeredFromDocs
+      : '';
+
+  if (!findings.length || !summary) {
+    const result = abstain(query, copy.notFoundSummary(query), language, latency);
     result.conflicts = conflicts;
     return result;
   }
 
-  if (modelAnswer?.findings?.length) {
-    modelAnswer.findings.slice(0, 4).forEach((finding, index) => {
-      const first = hits[finding.evidenceIndex];
-      if (!first) return;
-      const second = Number.isInteger(finding.evidenceIndex2) ? hits[finding.evidenceIndex2] : null;
-      const sources = [first.chunk.text, second?.chunk.text].filter(Boolean);
-      const claim = `${finding.text || ''} ${finding.textCont || ''}`;
-      if (!numbersAreGrounded(claim, sources)) return;
-      mergeClause(clauses, first.chunk);
-      if (second) mergeClause(clauses, second.chunk);
-      findings.push({
-        label: finding.label || `${String(index + 1).padStart(2, '0')} / EVIDENCE`,
-        text: finding.text || 'The cited passage states:',
-        citation1: citation(first.chunk),
-        textCont: finding.textCont || '',
-        citation2: second ? citation(second.chunk) : null
-      });
-      traces.push({
-        id: `CLM-${String(traces.length + 1).padStart(2, '0')}`,
-        claim: (finding.text || claim).slice(0, 280),
-        sourceDoc: first.chunk.filename,
-        location: `Page ${first.chunk.page} · ${first.chunk.section}`,
-        bbox: first.chunk.bbox,
-        rawExcerpt: `"${first.chunk.excerpt.slice(0, 360)}"`,
-        status: 'VERIFIED · EXCERPT MATCH'
-      });
-    });
-  }
-
-  if (!findings.length) {
-    hits.slice(0, 3).forEach((hit, index) => {
-      mergeClause(clauses, hit.chunk);
-      findings.push({
-        label: modelError
-          ? `${String(index + 1).padStart(2, '0')} / EXTRACTED EVIDENCE (MODEL UNAVAILABLE)`
-          : `${String(index + 1).padStart(2, '0')} / RETRIEVED PASSAGE`,
-        text: `${copy.retrievedLead} ${hit.chunk.filename}, ${copy.page} ${hit.chunk.page}. ${copy.noAdded}`,
-        citation1: citation(hit.chunk),
-        textCont: hit.chunk.excerpt.slice(0, 420),
-        citation2: null
-      });
-      traces.push({
-        id: `CLM-${String(index + 1).padStart(2, '0')}`,
-        claim: `${copy.passage} "${query}"`,
-        sourceDoc: hit.chunk.filename,
-        location: `Page ${hit.chunk.page} · ${hit.chunk.section}`,
-        bbox: hit.chunk.bbox,
-        rawExcerpt: `"${hit.chunk.excerpt.slice(0, 360)}"`,
-        status: modelError ? 'EXTRACTIVE · MODEL UNAVAILABLE' : 'VERIFIED · EXCERPT MATCH'
-      });
-    });
-  }
-
-  const conflict = Boolean(modelAnswer?.conflict) || conflicts.length > 0;
-  const recommendation = modelAnswer?.recommendation && numbersAreGrounded(modelAnswer.recommendation, hits.map((hit) => hit.chunk.text))
+  const conflict = Boolean(modelAnswer.conflict) || conflicts.length > 0;
+  const cited = sourcesFrom(modelAnswer.findings, hits, clauses, query);
+  const recommendation = modelAnswer.recommendation && numbersAreGrounded(modelAnswer.recommendation, sources)
     ? modelAnswer.recommendation
     : conflict
       ? copy.action
-      : modelError
-        ? copy.modelNote(modelError)
-        : copy.trace;
+      : '';
+  const sameAsSummary = recommendation && recommendation.replace(/\s+/g, ' ').trim().toLowerCase() === summary.replace(/\s+/g, ' ').trim().toLowerCase();
 
   return {
     message: {
       role: 'assistant',
-      latency: `${Date.now() - started}ms`,
-      status: conflict ? copy.conflict : modelError ? copy.extractive : copy.evidence,
-      statusType: conflict || modelError ? 'warning' : 'verified',
-      summary: modelAnswer?.summary && numbersAreGrounded(modelAnswer.summary, hits.map((hit) => hit.chunk.text))
-        ? modelAnswer.summary
-        : copy.retrieved(findings.length, query),
-      findings,
-      recommendation
+      latency,
+      status: conflict ? copy.conflict : '',
+      statusType: conflict ? 'warning' : 'verified',
+      summary,
+      findings: [],
+      sources: cited,
+      recommendation: sameAsSummary ? '' : recommendation
     },
     clauses,
     conflicts,
-    traces,
-    inspection: clauses[0] ? { docId: clauses[0].docId, clauseKey: clauses[0].clauseKey } : null
+    traces: []
   };
 }
 

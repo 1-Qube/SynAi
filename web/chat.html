@@ -32,31 +32,43 @@
     </script>
     <style>
         * { box-sizing: border-box; border-radius: 0 !important; }
+        html, body { height: 100%; }
         body { background: #F2F0E8; color: #0E0E0E; font-family: Inter, sans-serif; }
         .b-box { border: 1px solid #0E0E0E; }
         .b-line-t { border-top: 1px solid #0E0E0E; }
         .b-line-b { border-bottom: 1px solid #0E0E0E; }
         .b-line-l { border-left: 1px solid #0E0E0E; }
-        .b-line-r { border-right: 1px solid #0E0E0E; }
         .btn-brutal { background: #0E0E0E; color: #F2F0E8; border: 1px solid #0E0E0E; }
         .btn-brutal:hover { background: #CEFF1A; color: #0E0E0E; }
         .cite-pill {
             font-family: 'JetBrains Mono', monospace;
             font-size: 11px;
             font-weight: 600;
-            padding: 1px 6px;
+            padding: 4px 8px;
             border: 1px solid #0E0E0E;
             background: #CEFF1A;
             cursor: pointer;
-            display: inline-block;
+            text-align: left;
         }
         .cite-pill:hover { background: #0E0E0E; color: #CEFF1A; }
+        #workspace { position: relative; }
+        #viewer { display: none; }
+        #viewer.open { display: flex; }
+        @media (max-width: 960px) {
+            #viewer.open {
+                position: absolute;
+                inset: 0;
+                width: auto;
+                z-index: 4;
+                background: #F2F0E8;
+            }
+        }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-thumb { background: #0E0E0E; }
     </style>
 </head>
-<body class="h-screen flex flex-col">
-    <header class="px-5 sm:px-8 py-4 b-line-b flex items-center justify-between gap-4">
+<body class="h-screen flex flex-col overflow-hidden">
+    <header class="shrink-0 px-5 sm:px-8 py-4 b-line-b flex items-center justify-between gap-4">
         <a href="/" class="text-[22px] font-black tracking-[-0.05em]">SYNAI</a>
         <div class="flex items-center b-box bg-paper text-[11px] font-mono font-semibold">
             <button type="button" data-lang="en" class="lang px-2.5 py-1 bg-ink text-paper">EN</button>
@@ -65,20 +77,41 @@
         </div>
     </header>
 
-    <div id="docs" class="px-5 sm:px-8 py-3 b-line-b flex flex-wrap items-center gap-2 font-mono text-[11px]">
+    <div id="docs" class="shrink-0 px-5 sm:px-8 py-3 b-line-b flex flex-wrap items-center gap-2 font-mono text-[11px]">
         <label class="btn-brutal px-3 py-1.5 cursor-pointer">
             <span id="upload-label">UPLOAD</span>
             <input id="file" type="file" accept=".pdf,.docx,.txt,.xml,.csv,.dxf" multiple class="hidden">
         </label>
         <span id="doc-empty" class="text-muted">No documents yet.</span>
+        <span id="doc-note" class="text-muted"></span>
     </div>
 
-    <main id="thread" class="flex-1 overflow-y-auto px-5 sm:px-8 py-6 space-y-4"></main>
-
-    <form id="composer" class="px-5 sm:px-8 py-4 b-line-t flex gap-2">
-        <input id="input" type="text" autocomplete="off" class="flex-1 b-box bg-paperCard px-4 py-3 text-[15px] focus:outline-none" placeholder="Ask about the uploaded documents...">
-        <button type="submit" class="btn-brutal px-5 py-3 font-mono text-[12px] font-bold">SEND</button>
-    </form>
+    <div id="workspace" class="flex-1 min-h-0 flex">
+        <section class="flex-1 min-w-0 min-h-0 flex flex-col">
+            <main id="thread" class="flex-1 min-h-0 overflow-y-auto">
+                <div id="column" class="w-full max-w-[740px] mx-auto px-4 sm:px-6 py-6 flex flex-col gap-4"></div>
+            </main>
+            <form id="composer" class="shrink-0 b-line-t bg-paper">
+                <div class="w-full max-w-[740px] mx-auto px-4 sm:px-6 py-4 flex gap-2">
+                    <input id="input" type="text" autocomplete="off" class="flex-1 min-w-0 b-box bg-paperCard px-4 py-3 text-[15px] focus:outline-none" placeholder="Ask about the uploaded documents...">
+                    <button type="submit" class="btn-brutal px-5 py-3 font-mono text-[12px] font-bold">SEND</button>
+                </div>
+            </form>
+        </section>
+        <aside id="viewer" class="w-[min(46vw,560px)] min-h-0 b-line-l bg-paperCard flex-col">
+            <div class="shrink-0 px-4 py-3 b-line-b flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <div id="viewer-file" class="font-mono text-[11px] font-bold break-all"></div>
+                    <div id="viewer-page" class="font-mono text-[11px] text-charcoal mt-1"></div>
+                </div>
+                <button id="viewer-close" type="button" class="btn-brutal px-2 py-1 font-mono text-[11px]">CLOSE</button>
+            </div>
+            <div id="viewer-stage" class="flex-1 min-h-0 overflow-auto p-3">
+                <canvas id="pdf-canvas" class="b-box bg-white max-w-full"></canvas>
+                <p id="viewer-error" class="hidden font-mono text-[12px] text-signal mt-3"></p>
+            </div>
+        </aside>
+    </div>
 
     <script>
         const copy = {
@@ -90,7 +123,11 @@
                 scanning: 'Reading the indexed pages...',
                 you: 'YOU',
                 none: 'Nothing was found in the selected documents.',
-                excerpt: 'Cited excerpt'
+                sources: 'Source',
+                page: 'Page',
+                already: 'Already indexed.',
+                uploaded: 'Indexed.',
+                viewerFail: 'Could not open that PDF page.'
             },
             ru: {
                 upload: 'ЗАГРУЗИТЬ',
@@ -100,7 +137,11 @@
                 scanning: 'Читаю проиндексированные страницы...',
                 you: 'ВЫ',
                 none: 'В выбранных документах это не найдено.',
-                excerpt: 'Цитируемый фрагмент'
+                sources: 'Источник',
+                page: 'Стр.',
+                already: 'Уже в индексе.',
+                uploaded: 'Проиндексировано.',
+                viewerFail: 'Не удалось открыть эту страницу PDF.'
             },
             kz: {
                 upload: 'ЖҮКТЕУ',
@@ -110,18 +151,26 @@
                 scanning: 'Индекстелген беттер оқылуда...',
                 you: 'СІЗ',
                 none: 'Таңдалған құжаттарда бұл табылмады.',
-                excerpt: 'Дәйексөз үзіндісі'
+                sources: 'Дереккөз',
+                page: 'Бет',
+                already: 'Индексте бар.',
+                uploaded: 'Индекстелді.',
+                viewerFail: 'PDF бетін ашу мүмкін болмады.'
             }
         };
 
         let lang = localStorage.getItem('synai-lang') || 'en';
         if (!copy[lang]) lang = 'en';
         let documents = [];
-        let history = [];
+        let messages = [];
         let busy = false;
+        let pdfjsPromise = null;
+        const pdfCache = new Map();
 
+        const column = document.getElementById('column');
         const thread = document.getElementById('thread');
         const input = document.getElementById('input');
+        const viewer = document.getElementById('viewer');
 
         function t(key) { return copy[lang][key]; }
         function esc(value) {
@@ -161,56 +210,152 @@
             });
         }
 
-        function addBubble(role, html) {
-            const wrap = document.createElement('article');
-            wrap.className = role === 'user' ? 'ml-auto max-w-[720px] b-box bg-ink text-paper p-4' : 'max-w-[860px] b-box bg-paperCard p-4';
-            wrap.innerHTML = html;
-            thread.appendChild(wrap);
+        function saveThread() {
+            const slim = messages.filter((item) => item.role !== 'pending').slice(-24);
+            sessionStorage.setItem('synai-thread', JSON.stringify(slim));
+        }
+
+        function loadThread() {
+            try {
+                const saved = JSON.parse(sessionStorage.getItem('synai-thread') || '[]');
+                messages = Array.isArray(saved) ? saved : [];
+            } catch {
+                messages = [];
+            }
+        }
+
+        function historyPayload() {
+            return messages
+                .filter((item) => item.role === 'user' || item.role === 'assistant')
+                .slice(-8)
+                .map((item) => ({ role: item.role, text: item.role === 'user' ? item.text : (item.summary || '') }));
+        }
+
+        function sourceButtons(sources) {
+            return (sources || []).map((cite, index) => `
+                <button type="button" class="cite-pill" data-cite="${index}">
+                    ${esc(cite.filename || cite.label)} · ${t('page')} ${esc(cite.page)}
+                </button>
+                ${cite.excerpt ? `<p class="text-[13px] leading-relaxed text-charcoal">“${esc(cite.excerpt)}”</p>` : ''}
+            `).join('');
+        }
+
+        function messageHtml(item) {
+            if (item.role === 'user') {
+                return `<article class="w-full b-box bg-ink text-paper p-4" data-role="user">
+                    <div class="font-mono text-[10px] mb-1 text-acid">${t('you')}</div>
+                    <div class="font-semibold leading-relaxed">${esc(item.text)}</div>
+                </article>`;
+            }
+            if (item.role === 'pending') {
+                return `<article class="w-full b-box bg-paperCard p-4" data-role="pending"><div class="font-mono text-xs">${t('scanning')}</div></article>`;
+            }
+            if (item.role === 'error') {
+                return `<article class="w-full b-box bg-paperCard p-4"><div class="font-mono text-xs text-signal">${esc(item.text)}</div></article>`;
+            }
+            const warning = item.statusType === 'warning' && item.status;
+            const sources = sourceButtons(item.sources);
+            return `<article class="w-full b-box bg-paperCard p-4" data-role="assistant">
+                ${warning ? `<div class="font-mono text-[10px] font-bold mb-2 text-signal">${esc(item.status)}</div>` : ''}
+                <p class="text-[15px] leading-relaxed">${esc(item.summary || t('none'))}</p>
+                ${item.recommendation ? `<p class="mt-3 pt-3 b-line-t text-[14px] leading-relaxed">${esc(item.recommendation)}</p>` : ''}
+                ${sources ? `<div class="mt-3 pt-3 b-line-t space-y-2"><div class="font-mono text-[10px] font-bold">${t('sources')}</div>${sources}</div>` : ''}
+            </article>`;
+        }
+
+        function renderThread() {
+            column.innerHTML = messages.map(messageHtml).join('');
             thread.scrollTop = thread.scrollHeight;
-            return wrap;
         }
 
-        function clauseFor(data, cite) {
-            return (data.clauses || []).find((item) => item.docId === cite.docId && item.clauseKey === cite.clauseKey);
-        }
-
-        function renderAnswer(query, data) {
+        function collectSources(data) {
             const message = data.message || {};
-            const warning = message.statusType === 'warning';
-            const findings = message.findings || [];
-            const points = findings.map((finding) => {
-                const bits = [esc(finding.text)];
-                [finding.citation1, finding.citation2].forEach((cite) => {
-                    if (!cite) return;
-                    const clause = clauseFor(data, cite);
-                    const excerpt = clause ? clause.clause.verbatim : '';
-                    bits.push(`<button type="button" class="cite-pill" data-excerpt="${esc(excerpt)}" data-label="${esc(cite.label)}">[${esc(cite.label)}]</button>`);
-                });
-                if (finding.textCont) bits.push(esc(finding.textCont));
-                return `<li class="pl-1">${bits.join(' ')}</li>`;
-            }).join('');
-            addBubble('assistant', `
-                <div class="font-mono text-[10px] font-bold mb-2 ${warning ? 'text-signal' : ''}">${esc(message.status || '')}</div>
-                <p class="text-[15px] leading-relaxed mb-3">${esc(message.summary || t('none'))}</p>
-                ${points ? `<ol class="list-decimal list-inside space-y-2 text-[14px] leading-relaxed">${points}</ol>` : ''}
-                ${message.recommendation ? `<p class="mt-3 pt-3 b-line-t font-mono text-[12px]">${esc(message.recommendation)}</p>` : ''}
-                <div class="excerpt hidden mt-3 p-3 b-box bg-acid text-[13px]"></div>
-            `);
+            const cites = [];
+            const seen = new Set();
+            const push = (cite) => {
+                if (!cite || !cite.docId) return;
+                const key = `${cite.docId}|${cite.page}|${cite.clauseKey || ''}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                cites.push(cite);
+            };
+            (message.sources || []).forEach(push);
+            (message.findings || []).forEach((finding) => {
+                push(finding.citation1);
+                push(finding.citation2);
+            });
+            return cites;
         }
 
-        thread.addEventListener('click', (event) => {
+        async function loadPdfjs() {
+            if (!pdfjsPromise) {
+                pdfjsPromise = import('/vendor/pdfjs/pdf.min.mjs').then((pdfjs) => {
+                    pdfjs.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.mjs';
+                    return pdfjs;
+                });
+            }
+            return pdfjsPromise;
+        }
+
+        async function openCitation(cite) {
+            const file = document.getElementById('viewer-file');
+            const pageLabel = document.getElementById('viewer-page');
+            const error = document.getElementById('viewer-error');
+            const canvas = document.getElementById('pdf-canvas');
+            viewer.classList.add('open');
+            file.textContent = cite.filename || cite.label || '';
+            pageLabel.textContent = `${t('page')} ${cite.page || 1}`;
+            error.classList.add('hidden');
+            try {
+                const pdfjs = await loadPdfjs();
+                let pdf = pdfCache.get(cite.docId);
+                if (!pdf) {
+                    pdf = await pdfjs.getDocument({ url: `/api/documents/${encodeURIComponent(cite.docId)}/file` }).promise;
+                    pdfCache.set(cite.docId, pdf);
+                }
+                const pageNo = Math.min(Math.max(1, Number(cite.page) || 1), pdf.numPages);
+                pageLabel.textContent = `${t('page')} ${pageNo} / ${pdf.numPages}`;
+                const page = await pdf.getPage(pageNo);
+                const stage = document.getElementById('viewer-stage');
+                const base = page.getViewport({ scale: 1 });
+                const scale = Math.max(0.6, (stage.clientWidth - 24) / base.width);
+                const viewport = page.getViewport({ scale });
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+            } catch {
+                error.textContent = t('viewerFail');
+                error.classList.remove('hidden');
+            }
+        }
+
+        column.addEventListener('click', (event) => {
             const pill = event.target.closest('.cite-pill');
             if (!pill) return;
-            const box = pill.closest('article').querySelector('.excerpt');
-            box.classList.remove('hidden');
-            box.innerHTML = `<div class="font-mono text-[10px] font-bold mb-1">${t('excerpt')} · ${pill.dataset.label}</div>${esc(pill.dataset.excerpt || t('none'))}`;
+            const article = pill.closest('article');
+            const index = [...column.querySelectorAll('article')].indexOf(article);
+            const citeIndex = Number(pill.dataset.cite);
+            const cite = messages[index]?.sources?.[citeIndex];
+            if (cite) openCitation(cite);
         });
+
+        document.getElementById('viewer-close').onclick = () => viewer.classList.remove('open');
 
         async function loadDocs() {
             try {
                 const response = await fetch('/api/documents');
                 const data = await response.json();
-                documents = data.documents || [];
+                const included = new Map(documents.map((doc) => [doc.id, doc.included]));
+                const seen = new Set();
+                documents = (data.documents || []).filter((doc) => {
+                    const key = doc.digest || doc.hash || doc.filename;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                }).map((doc) => ({
+                    ...doc,
+                    included: included.has(doc.id) ? included.get(doc.id) : doc.included !== false
+                }));
                 paintDocs();
             } catch {
                 document.getElementById('doc-empty').textContent = 'API offline';
@@ -221,17 +366,32 @@
             button.onclick = () => {
                 lang = button.dataset.lang;
                 paintLang();
+                renderThread();
             };
         });
 
         document.getElementById('file').onchange = async (event) => {
-            for (const file of event.target.files) {
-                const form = new FormData();
-                form.append('file', file);
-                await fetch('/api/documents', { method: 'POST', body: form });
-            }
+            const note = document.getElementById('doc-note');
+            const files = [...event.target.files];
             event.target.value = '';
-            loadDocs();
+            if (!files.length || busy) return;
+            busy = true;
+            note.textContent = '';
+            try {
+                for (const file of files) {
+                    const form = new FormData();
+                    form.append('file', file);
+                    const response = await fetch('/api/documents', { method: 'POST', body: form });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error || 'Upload failed');
+                    note.textContent = data.duplicate ? t('already') : t('uploaded');
+                }
+                await loadDocs();
+            } catch (error) {
+                note.textContent = error.message;
+            } finally {
+                busy = false;
+            }
         };
 
         document.getElementById('composer').onsubmit = async (event) => {
@@ -240,8 +400,10 @@
             if (!query || busy) return;
             busy = true;
             input.value = '';
-            addBubble('user', `<div class="font-mono text-[10px] mb-1 text-acid">${t('you')}</div><div class="font-semibold">${esc(query)}</div>`);
-            const pending = addBubble('assistant', `<div class="font-mono text-xs">${t('scanning')}</div>`);
+            messages.push({ role: 'user', text: query });
+            messages.push({ role: 'pending' });
+            renderThread();
+            saveThread();
             try {
                 const response = await fetch('/api/query', {
                     method: 'POST',
@@ -250,16 +412,22 @@
                         query,
                         documentIds: documents.filter((doc) => doc.included !== false).map((doc) => doc.id),
                         language: apiLang(),
-                        history
+                        history: historyPayload().slice(0, -1)
                     })
                 });
                 const data = await response.json();
+                messages = messages.filter((item) => item.role !== 'pending');
                 if (!response.ok) throw new Error(data.error || 'Query failed');
-                pending.remove();
-                renderAnswer(query, data);
-                history.push({ role: 'user', text: query });
-                history.push({ role: 'assistant', text: data.message?.summary || '' });
-                history = history.slice(-8);
+                messages.push({
+                    role: 'assistant',
+                    summary: data.message?.summary || '',
+                    status: data.message?.status || '',
+                    statusType: data.message?.statusType || '',
+                    recommendation: data.message?.recommendation || '',
+                    sources: collectSources(data)
+                });
+                saveThread();
+                renderThread();
                 if (data.conflicts) {
                     const flagged = new Set(data.conflicts.flatMap((item) => [item.leftDocId, item.rightDocId]));
                     documents.forEach((doc) => {
@@ -268,7 +436,10 @@
                     paintDocs();
                 }
             } catch (error) {
-                pending.innerHTML = `<div class="font-mono text-xs text-signal">${esc(error.message)}</div>`;
+                messages = messages.filter((item) => item.role !== 'pending');
+                messages.push({ role: 'error', text: error.message });
+                saveThread();
+                renderThread();
             } finally {
                 busy = false;
                 input.focus();
@@ -276,6 +447,8 @@
         };
 
         paintLang();
+        loadThread();
+        renderThread();
         loadDocs();
         input.focus();
     </script>

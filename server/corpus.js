@@ -26,11 +26,42 @@ function chunksFromClauses(doc) {
   }));
 }
 
+function fileDigest(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return '';
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function collapseDuplicates(docs) {
+  const seen = new Set();
+  const kept = [];
+  const dropped = [];
+  for (const doc of docs) {
+    const digest = doc.digest || fileDigest(doc.filePath) || doc.hash || '';
+    const next = digest ? { ...doc, digest } : doc;
+    if (digest && seen.has(digest)) {
+      dropped.push(next);
+      continue;
+    }
+    if (digest) seen.add(digest);
+    kept.push(next);
+  }
+  const keptPaths = new Set(kept.map((doc) => doc.filePath).filter(Boolean));
+  for (const doc of dropped) {
+    if (doc.filePath && !keptPaths.has(doc.filePath) && fs.existsSync(doc.filePath)) {
+      fs.unlinkSync(doc.filePath);
+    }
+  }
+  return { kept, changed: dropped.length > 0 || kept.some((doc, index) => doc.digest !== docs[index]?.digest) };
+}
+
 function load() {
   ensureDirs();
   if (!fs.existsSync(CORPUS_PATH)) return [];
   const parsed = JSON.parse(fs.readFileSync(CORPUS_PATH, 'utf8'));
-  return (parsed.documents || []).filter((doc) => !doc.seeded && Array.isArray(doc.chunks) && doc.chunks.length);
+  const loaded = (parsed.documents || []).filter((doc) => !doc.seeded && Array.isArray(doc.chunks) && doc.chunks.length);
+  const { kept, changed } = collapseDuplicates(loaded);
+  if (changed) save(kept);
+  return kept;
 }
 
 function save(documents) {
@@ -62,8 +93,17 @@ export function nextDocumentId() {
   return `DOC-${String(next).padStart(2, '0')}`;
 }
 
+export function documentDigest(bufferOrText) {
+  return crypto.createHash('sha256').update(bufferOrText).digest('hex');
+}
+
+export function findByDigest(digest) {
+  if (!digest) return null;
+  return documents.find((doc) => doc.digest === digest || doc.hash === digest) || null;
+}
+
 export function addDocument(doc) {
-  documents = [doc, ...documents.filter((existing) => existing.id !== doc.id)];
+  documents = [doc, ...documents.filter((existing) => existing.id !== doc.id && existing.digest !== doc.digest)];
   save(documents);
   return doc;
 }

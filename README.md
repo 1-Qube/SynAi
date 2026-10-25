@@ -15,6 +15,6 @@ npm run dev
 
 ## Configuration
 
-Copy `.env.example` to `.env` and set `GEMINI_API_KEY`. The key stays on the server and is never sent to the browser.
+Copy `.env.example` to `.env` and set `GEMINI_API_KEY`. The key stays on the server and is never sent to the browser. `GET /api/health` reports whether that key can reach a Gemini model. If Gemini rejects the key, quota, or model, the chat shows that error instead of raw excerpts.
 
 Supported uploads: PDF, DOCX, TXT, XML, CSV, and text-bearing DXF. DWG and legacy DOC must be exported to PDF or DOCX first.

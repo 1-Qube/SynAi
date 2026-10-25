@@ -4,8 +4,11 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import { answerQuestion, compareDocuments } from './answer.js';
+import { geminiHealth } from './gemini.js';
 import {
   addDocument,
+  documentDigest,
+  findByDigest,
   getDocument,
   listDocuments,
   nextDocumentId,
@@ -32,11 +35,15 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }
 });
 
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', async (_req, res) => {
+  const gemini = await geminiHealth();
   res.json({
     ok: true,
     documents: listDocuments().length,
-    geminiConfigured: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY)
+    geminiConfigured: gemini.configured,
+    geminiReady: gemini.ready,
+    geminiModel: gemini.model || null,
+    geminiError: gemini.ready ? null : (gemini.message || null)
   });
 });
 
@@ -60,9 +67,20 @@ app.post('/api/documents', upload.single('file'), async (req, res) => {
       res.status(422).json({ error: 'No extractable text was found in that file.' });
       return;
     }
+    const buffer = fs.readFileSync(req.file.path);
+    const digest = documentDigest(buffer);
+    const existing = findByDigest(digest);
+    if (existing) {
+      fs.unlinkSync(req.file.path);
+      res.json({
+        document: toClientDocument(existing),
+        duplicate: true,
+        conflicts: compareDocuments()
+      });
+      return;
+    }
     const id = nextDocumentId();
     const filename = req.file.originalname.toUpperCase().replace(/\s+/g, '-');
-    const buffer = fs.readFileSync(req.file.path);
     const draft = {
       id,
       code: filename.replace(/\.[A-Z0-9]+$/, '').slice(0, 22),
@@ -71,6 +89,7 @@ app.post('/api/documents', upload.single('file'), async (req, res) => {
       pages: pages.length,
       rev: 'REV.01.0',
       hash: shortHash(buffer),
+      digest,
       date: new Date().toISOString().slice(0, 10),
       type: 'INGESTED SPEC',
       included: true,
@@ -108,7 +127,11 @@ app.post('/api/query', async (req, res) => {
     const result = await answerQuestion({ query, documentIds, history, language });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message || 'Query failed' });
+    const message = error.message || 'Query failed';
+    res.status(error.status || 500).json({
+      error: message,
+      code: error.code || 'query_failed'
+    });
   }
 });
 
@@ -116,6 +139,30 @@ app.post('/api/compare', (req, res) => {
   const documentIds = Array.isArray(req.body?.documentIds) ? req.body.documentIds : [];
   res.json({ conflicts: compareDocuments(documentIds) });
 });
+
+app.get('/api/documents/:id/file', (req, res) => {
+  const document = getDocument(req.params.id);
+  if (!document?.filePath) {
+    res.status(404).json({ error: 'File not found.' });
+    return;
+  }
+  const resolved = path.resolve(document.filePath);
+  const root = path.resolve(uploadDir());
+  const relative = path.relative(root, resolved);
+  if (relative.startsWith('..') || path.isAbsolute(relative) || !fs.existsSync(resolved)) {
+    res.status(404).json({ error: 'File not found.' });
+    return;
+  }
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${document.filename}"`);
+  fs.createReadStream(resolved).pipe(res);
+});
+
+app.use('/vendor/pdfjs', express.static(path.resolve('node_modules/pdfjs-dist/build'), {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.mjs')) res.setHeader('Content-Type', 'text/javascript');
+  }
+}));
 
 app.use((error, _req, res, _next) => {
   if (error instanceof multer.MulterError) {
