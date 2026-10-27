@@ -108,6 +108,23 @@ export function addDocument(doc) {
   return doc;
 }
 
+export function removeDocument(id) {
+  const doc = documents.find((item) => item.id === id);
+  if (!doc) return null;
+  documents = documents.filter((item) => item.id !== id);
+  save(documents);
+  const stillUsed = documents.some((item) => item.filePath && item.filePath === doc.filePath);
+  if (!stillUsed && doc.filePath) {
+    const resolved = path.resolve(doc.filePath);
+    const root = path.resolve(UPLOAD_DIR);
+    const relative = path.relative(root, resolved);
+    if (!relative.startsWith('..') && !path.isAbsolute(relative) && fs.existsSync(resolved)) {
+      fs.unlinkSync(resolved);
+    }
+  }
+  return doc;
+}
+
 export function updateDocument(id, patch) {
   documents = documents.map((doc) => (doc.id === id ? { ...doc, ...patch } : doc));
   save(documents);

@@ -12,6 +12,7 @@ import {
   getDocument,
   listDocuments,
   nextDocumentId,
+  removeDocument,
   shortHash,
   toClientDocument,
   uploadDir
@@ -138,6 +139,19 @@ app.post('/api/query', async (req, res) => {
 app.post('/api/compare', (req, res) => {
   const documentIds = Array.isArray(req.body?.documentIds) ? req.body.documentIds : [];
   res.json({ conflicts: compareDocuments(documentIds) });
+});
+
+app.delete('/api/documents/:id', (req, res) => {
+  const removed = removeDocument(req.params.id);
+  if (!removed) {
+    res.status(404).json({ error: 'Document not found.' });
+    return;
+  }
+  res.json({
+    id: removed.id,
+    documents: listDocuments().map(toClientDocument),
+    conflicts: compareDocuments()
+  });
 });
 
 app.get('/api/documents/:id/file', (req, res) => {

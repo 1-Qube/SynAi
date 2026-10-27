@@ -19,7 +19,8 @@ import {
   Plus,
   Minus,
   RefreshCw,
-  FileCode
+  FileCode,
+  Trash2
 } from 'lucide-react';
 
 // ============================================================================
@@ -453,6 +454,34 @@ export default function App() {
     setTimeout(() => setUploadNotification(null), 6000);
   };
 
+  const removeUploadedFile = async (docId, event) => {
+    event?.stopPropagation();
+    event?.preventDefault();
+    const doc = documents.find((item) => item.id === docId);
+    if (!doc || !window.confirm(t('confirmDelete'))) return;
+    try {
+      const response = await fetch(`/api/documents/${encodeURIComponent(docId)}`, { method: 'DELETE' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Delete failed');
+      const remaining = documents.filter((item) => item.id !== docId);
+      setDocuments(remaining);
+      if (Array.isArray(data.conflicts)) {
+        setContradictionDiffs(data.conflicts);
+        setSelectedDiffId(data.conflicts[0]?.id || null);
+      }
+      if (activeInspection.docId === docId) {
+        const fallback = remaining[0];
+        setActiveInspection(fallback
+          ? { docId: fallback.id, clauseKey: Object.keys(fallback.clauses || {})[0] || null }
+          : { docId: null, clauseKey: null });
+      }
+      setUploadNotification(t('deleted'));
+    } catch (error) {
+      setUploadNotification(`${t('deleteFailed')}: ${error.message}`);
+    }
+    setTimeout(() => setUploadNotification(null), 4000);
+  };
+
   const runPresetPrompt = (preset) => {
     if (typeof preset === 'string') submitQuery(preset);
     else if (preset.queryKey) submitQuery(t(preset.queryKey));
@@ -802,12 +831,24 @@ export default function App() {
                         {doc.title}
                       </p>
 
-                      <div className={`mt-3 pt-2.5 border-t flex items-center justify-between font-mono-tech text-[10px] ${
+                      <div className={`mt-3 pt-2.5 border-t flex items-center justify-between gap-2 font-mono-tech text-[10px] ${
                         isSelected ? 'border-[#F6F5F2]/15 text-[#F6F5F2]/60' : 'border-[#E2E0DC] text-[#686662]'
                       }`}>
                         <span>PAGES: {doc.pages}</span>
                         <span>HASH: {doc.hash}</span>
-                        <span>{doc.type}</span>
+                        <button
+                          type="button"
+                          title={t('removeTitle')}
+                          onClick={(event) => removeUploadedFile(doc.id, event)}
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 border ${
+                            isSelected
+                              ? 'border-[#FF3B00] text-[#FF3B00] hover:bg-[#FF3B00] hover:text-[#F6F5F2]'
+                              : 'border-[#FF3B00]/40 text-[#FF3B00] hover:bg-[#FF3B00] hover:text-[#F6F5F2]'
+                          }`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          {t('remove')}
+                        </button>
                       </div>
                     </div>
                   );
@@ -970,8 +1011,17 @@ export default function App() {
                                 <span className="text-[#008A4B]">{t('indexed')}</span>
                               )}
                             </div>
-                            <div className="font-mono-tech text-xs font-semibold text-[#0D0D0D] mt-0.5 break-all">
-                              {doc.filename}
+                            <div className="font-mono-tech text-xs font-semibold text-[#0D0D0D] mt-0.5 break-all flex items-start justify-between gap-2">
+                              <span>{doc.filename}</span>
+                              <button
+                                type="button"
+                                title={t('removeTitle')}
+                                onClick={(event) => removeUploadedFile(doc.id, event)}
+                                className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 border border-[#FF3B00]/50 text-[#FF3B00] hover:bg-[#FF3B00] hover:text-[#F6F5F2]"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                {t('remove')}
+                              </button>
                             </div>
                             <div className="text-[11px] text-[#686662] mt-0.5 line-clamp-1">
                               {doc.title}

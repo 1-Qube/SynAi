@@ -127,7 +127,11 @@
                 page: 'Page',
                 already: 'Already indexed.',
                 uploaded: 'Indexed.',
-                viewerFail: 'Could not open that PDF page.'
+                viewerFail: 'Could not open that PDF page.',
+                remove: 'Delete',
+                confirmDelete: 'Delete this uploaded file from the index?',
+                deleted: 'File deleted.',
+                deleteFailed: 'Could not delete that file.'
             },
             ru: {
                 upload: 'ЗАГРУЗИТЬ',
@@ -141,7 +145,11 @@
                 page: 'Стр.',
                 already: 'Уже в индексе.',
                 uploaded: 'Проиндексировано.',
-                viewerFail: 'Не удалось открыть эту страницу PDF.'
+                viewerFail: 'Не удалось открыть эту страницу PDF.',
+                remove: 'Удалить',
+                confirmDelete: 'Удалить этот файл из индекса?',
+                deleted: 'Файл удалён.',
+                deleteFailed: 'Не удалось удалить файл.'
             },
             kz: {
                 upload: 'ЖҮКТЕУ',
@@ -155,7 +163,11 @@
                 page: 'Бет',
                 already: 'Индексте бар.',
                 uploaded: 'Индекстелді.',
-                viewerFail: 'PDF бетін ашу мүмкін болмады.'
+                viewerFail: 'PDF бетін ашу мүмкін болмады.',
+                remove: 'Өшіру',
+                confirmDelete: 'Бұл файлды индекстен өшіру керек пе?',
+                deleted: 'Файл өшірілді.',
+                deleteFailed: 'Файлды өшіру мүмкін болмады.'
             }
         };
 
@@ -197,17 +209,43 @@
             bar.querySelectorAll('[data-doc]').forEach((node) => node.remove());
             empty.classList.toggle('hidden', documents.length > 0);
             documents.forEach((doc) => {
+                const wrap = document.createElement('span');
+                wrap.dataset.doc = doc.id;
+                wrap.className = 'inline-flex items-stretch b-box';
                 const chip = document.createElement('button');
                 chip.type = 'button';
-                chip.dataset.doc = doc.id;
-                chip.className = `px-2 py-1 b-box ${doc.included === false ? 'text-muted bg-paper' : 'bg-acid'}`;
+                chip.className = `px-2 py-1 ${doc.included === false ? 'text-muted bg-paper' : 'bg-acid'}`;
                 chip.textContent = `${doc.filename}${doc.status === 'CONFLICT DETECTED' ? ' !' : ''}`;
                 chip.onclick = () => {
                     doc.included = doc.included === false;
                     paintDocs();
                 };
-                bar.appendChild(chip);
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'px-2 py-1 b-line-l font-bold';
+                remove.textContent = '×';
+                remove.title = t('remove');
+                remove.setAttribute('aria-label', t('remove'));
+                remove.onclick = (event) => deleteDoc(doc, event);
+                wrap.append(chip, remove);
+                bar.appendChild(wrap);
             });
+        }
+
+        async function deleteDoc(doc, event) {
+            event.stopPropagation();
+            if (!confirm(t('confirmDelete'))) return;
+            const note = document.getElementById('doc-note');
+            try {
+                const response = await fetch(`/api/documents/${encodeURIComponent(doc.id)}`, { method: 'DELETE' });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(data.error || t('deleteFailed'));
+                documents = documents.filter((item) => item.id !== doc.id);
+                note.textContent = t('deleted');
+                paintDocs();
+            } catch (error) {
+                note.textContent = error.message || t('deleteFailed');
+            }
         }
 
         function saveThread() {
